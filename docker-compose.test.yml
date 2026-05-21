@@ -1,0 +1,36 @@
+services:
+  worker-high:
+    environment:
+      SMS_PROVIDER_MODE: temporary_error_once
+      RETRY_BACKOFF_SECONDS: 1,2,3
+
+  worker-low:
+    environment:
+      EMAIL_PROVIDER_MODE: slow_success
+
+  test-runner:
+    build:
+      context: .
+      target: runtime
+    command: sh -c "pip install '.[dev]' && pytest tests/e2e -q"
+    env_file:
+      - .env.example
+    environment:
+      RUN_E2E: "1"
+      API_URL: http://api:8000
+      EXPECTED_SMS_ATTEMPTS: "2"
+    depends_on:
+      api:
+        condition: service_healthy
+      worker-high:
+        condition: service_started
+      worker-low:
+        condition: service_started
+      outbox-publisher:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
