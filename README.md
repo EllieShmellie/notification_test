@@ -2,32 +2,25 @@
 
 Микросервис массовой отправки SMS и Email уведомлений.
 
-Сервис принимает bulk-запрос через HTTP API, сохраняет уведомления в PostgreSQL,
-публикует задачи через RabbitMQ и обрабатывает их отдельными worker-процессами.
-Внешние SMS/Email шлюзы заменены mock-провайдерами.
-
 ## Стек
 
 - Python 3.12
-- FastAPI, Pydantic v2
-- SQLAlchemy 2 async, Alembic
-- PostgreSQL 16
+- FastAPI
+- PostgreSQL
 - RabbitMQ
 - Redis
 - Docker Compose
 - pytest
 
-## Что реализовано
+## Возможности
 
 - массовая отправка SMS и Email;
-- статусы `queued`, `sent`, `delivered`, `dropped`;
-- история статусов по подписчику;
 - приоритет transactional-сообщений над marketing;
-- transactional outbox для надежной публикации в RabbitMQ;
+- статусы `queued`, `sent`, `delivered`, `dropped`;
+- история уведомлений по подписчику;
 - retry при временных ошибках провайдера;
-- идемпотентность HTTP-запросов через `Idempotency-Key`;
-- защита от повторной обработки сообщений на уровне бизнес-логики;
-- интеграционные и e2e-тесты.
+- идемпотентность через `Idempotency-Key`;
+- mock-провайдеры для SMS и Email.
 
 ## Запуск
 
@@ -42,8 +35,6 @@ docker-compose up --build
 - OpenAPI JSON: http://localhost:8000/openapi.json
 - RabbitMQ UI: http://localhost:15672
 - RabbitMQ login/password: `guest` / `guest`
-
-Миграции применяются автоматически отдельным `migrate` service.
 
 ## API
 
@@ -81,7 +72,7 @@ curl -X POST http://localhost:8000/api/v1/notifications/bulk \
 curl "http://localhost:8000/api/v1/subscribers/1001/notifications?limit=50&offset=0"
 ```
 
-Доступные фильтры:
+Фильтры:
 
 - `status=queued|sent|delivered|dropped`
 - `channel=sms|email`
@@ -100,43 +91,7 @@ curl http://localhost:8000/api/v1/notifications/{notification_id}
 curl http://localhost:8000/health
 ```
 
-## Архитектура коротко
-
-```text
-Client
-  -> FastAPI API
-  -> PostgreSQL: batch, notifications, status history, outbox
-  -> Outbox Publisher
-  -> RabbitMQ: high / low / dlq
-  -> Worker High / Worker Low
-  -> SMS / Email Mock Provider
-  -> PostgreSQL: sent / delivered / dropped
-```
-
-Transactional-сообщения публикуются в `notifications.high`, marketing-сообщения
-в `notifications.low`. В Docker Compose запущены отдельные `worker-high` и
-`worker-low`, поэтому критичные сообщения не ждут завершения медленных
-marketing-отправок.
-
-## Настройки mock-провайдеров
-
-```env
-SMS_PROVIDER_MODE=success
-EMAIL_PROVIDER_MODE=success
-```
-
-Доступные режимы:
-
-- `success`
-- `slow_success`
-- `temporary_error_once`
-- `temporary_error_always`
-- `permanent_error`
-- `random`
-
 ## Тесты
-
-Локально:
 
 ```bash
 python -m venv .venv
@@ -153,8 +108,3 @@ docker compose -f docker-compose.yml -f docker-compose.test.yml up \
   --abort-on-container-exit \
   --exit-code-from test-runner
 ```
-
-E2E-сценарий поднимает PostgreSQL, RabbitMQ, Redis, API, workers и
-outbox-publisher, затем проверяет доставку уведомления, retry после временной
-ошибки, идемпотентный повтор HTTP-запроса и прием transactional-сообщения рядом
-с marketing batch.
